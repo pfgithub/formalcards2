@@ -24,24 +24,8 @@ type QgAction = {
     }[],
 };
 
-function qgNumericValue(card: Card): number {
-    switch(card.value) {
-        case Value.two: return 0;
-        case Value.three: invalid("should not be reachable");
-        case Value.four: return 4;
-        case Value.five: return 5;
-        case Value.six: return 6;
-        case Value.seven: return 7;
-        case Value.eight: return 8;
-        case Value.nine: return 9;
-        case Value.ten: invalid("should not be reachable");
-        case Value.jack: return 11;
-        case Value.queen: return 12;
-        case Value.king: return 13;
-        case Value.ace: return 14;
-        default: invalid("unreachable");
-    }
-}
+const qgCardOrder = [Value.four, Value.five, Value.six, Value.seven, Value.eight, Value.nine, Value.jack, Value.queen, Value.king, Value.ace];
+
 function qgCanPlay(state: QgState, add_card: Card): boolean {
     if(add_card.value === Value.two || add_card.value === Value.three || add_card.value === Value.ten) {
         return true;
@@ -52,7 +36,7 @@ function qgCanPlay(state: QgState, add_card: Card): boolean {
         i -= 1;
     }
     const top_card = state.deck.cards[i];
-    return qgNumericValue(top_card) <= qgNumericValue(add_card);
+    return qgCardOrder.indexOf(top_card.value) <= qgCardOrder.indexOf(add_card.value);
 }
 function qgDrawUpToThree(state: QgState, player: Player): void {
     const hand = state.hands.get(player)!;
