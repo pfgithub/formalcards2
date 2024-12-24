@@ -30,6 +30,9 @@ type Action = {
     p2: Player,
     p2_cards: Card[],
 } | {
+    kind: "invoke_lawrence_rule",
+    player: Player,
+} | {
     kind: "reveal_meld",
     melds: Map<Player, Set<Card>>,
 } | {
@@ -132,6 +135,9 @@ function* game(players_in: PlayerCircle): Generator<undefined, void, Action> {
     }
     {
         const action = yield;
+        if(action.kind === "invoke_lawrence_rule") {
+            invalid("TODO implement");
+        }
         if(action.kind !== "pass_cards") invalid("must pass cards");
         const p1 = bidder;
         const p2 = state.players.oppositeOf(p1);
