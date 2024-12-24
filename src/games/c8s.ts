@@ -33,15 +33,20 @@ class Pile {
     cards: Card[] = [];
     onceAdd: (() => void)[] = [];
     constructor(public up_side_visible_to: "all" | Player = "all") {}
-    add(card: Card, facing: Facing) {
-        this.emitAdd();
-        this.cards.push(card);
-        card.facing = facing;
-    }
-    addAll(cards: Card[], facing: Facing) {
-        this.emitAdd();
+    _addMany(cards: Card[]) {
         this.cards = [...this.cards, ...cards];
-        cards.forEach(added_card => added_card.facing = facing);
+        this.emitAdd();
+    }
+    // can make .addable().add where .addable() returns an Addable of (Pile, _addMany)
+    // can't make eg `implements Addable` and have it auto add the add, addMany fns
+    // what's even the point of oop if you have to do things the zig way in the end anyway
+    add(card: Card, facing: Facing): void {
+        card.facing = facing;
+        this._addMany([card]);
+    }
+    addAll(cards: Card[], facing: Facing): void {
+        for(const card of cards) card.facing = facing;
+        this._addMany(cards);
     }
     shuffle() {
         for (let i = this.cards.length - 1; i > 0; i--) {
@@ -84,6 +89,33 @@ class Pile {
     }
     count() {
         return this.cards.length;
+    }
+}
+type Vector2 = [number, number];
+class Grid {
+    items: Pile[];
+    constructor(public width: number, public height: number) {
+        this.items = Array.from({length: width * height}, () => new Pile());
+    }
+    indexToXY(index: number): Vector2 {
+        const resh = Math.floor(index / this.height);
+        const resw = index - resh * this.width;
+        return [resw, resh];
+    }
+    xyToIndex(pos: Vector2): number | null {
+        if(pos[0] < 0 || pos[1] < 0 || pos[0] >= this.width || pos[1] >= this.height) return null;
+        return pos[1] * this.width + pos[0];
+    }
+    findXY(cb: (pile: Pile, pos: Vector2) => boolean): Vector2 | null {
+        for(let i = 0; i < this.items.length; i++) {
+            if(cb(this.items[i], this.indexToXY(i))) return this.indexToXY(i);
+        }
+        return null;
+    }
+    get(pos: Vector2): Pile | null {
+        const idx = this.xyToIndex(pos);
+        if(idx == null) return null;
+        return this.items[idx];
     }
 }
 class Hand extends Pile {}
@@ -158,10 +190,17 @@ function c8sCanPlayOn(play_card: Card, on_card: Card, announcement?: Suit): bool
     if(play_card.suit === on_card.suit || play_card.value === on_card.value) return true;
     return false;
 }
-function c8sReshuffleHook(state: C8sState): void {
-    const top_of_discard = state.discard.takeTop();
+function c8sDraw(state: C8sState): Card | undefined {
+    let top = state.deck.takeTop();
+    if(top != null) return top;
+
+    const top_of_discard = state.discard.takeTop() ?? invalid("unreachable");
     state.deck.addAll(state.discard.takeAll(), Facing.down);
+    state.discard.add(top_of_discard!, top_of_discard.facing);
     state.deck.shuffle();
+
+    top = state.deck.takeTop();
+    return top;
 }
 function* c8sPlayCard(player: Player, state: C8sState, card: Card): Generator<undefined, void, C8sAction> {
     state.discard.add(card, Facing.up);
@@ -174,7 +213,7 @@ function* c8sPlayCard(player: Player, state: C8sState, card: Card): Generator<un
         }else invalid("can't do that now");
     }
 }
-function* c8sGame(players_in: Player[]): Generator<undefined, void, C8sAction> {
+function* c8sGame(players_in: Player[]): Generator<undefined, Player, C8sAction> {
     // Crazy 8s
 
     const state: C8sState = {
@@ -202,12 +241,12 @@ function* c8sGame(players_in: Player[]): Generator<undefined, void, C8sAction> {
         if(action.player === player && action.kind === "play_card") {
             yield* c8sPlayCard(player, state, state.hands.get(player)!.take(action.card));
         }else if(action.player === player && action.kind === "draw_card") {
-            const newly_drawn = state.deck.takeTop() ?? c8sReshuffleHook(state);
+            const newly_drawn = c8sDraw(state);
             const action = yield;
             if(action.player === player && action.kind === "play_card" && action.card === newly_drawn) {
                 yield* c8sPlayCard(player, state, newly_drawn);
             }else if(action.player === player && action.kind === "announce_done") {
-                // done
+                if(newly_drawn != null) state.hands.get(player)!.add(newly_drawn, Facing.player);
             }else invalid("can't do that now");
         }else invalid("can't do that now.");
 
@@ -222,7 +261,8 @@ function* c8sGame(players_in: Player[]): Generator<undefined, void, C8sAction> {
         player = state.players.leftOf(player);
     }
 
-    // player is the winner
+    // winner!
+    return player;
 }
 
 type QgState = {
@@ -231,7 +271,7 @@ type QgState = {
     trash: Pile,
     players: PlayerCircle,
     hands: Map<Player, Hand>,
-    infronts: Map<Player, Pile[]>,
+    infronts: Map<Player, Grid>,
     player: null | Player,
 };
 type QgAction = {
@@ -308,7 +348,7 @@ function qgPlay(state: QgState, cards: Card[]): void {
     }
 }
 
-function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
+function* qgGame(players_in: Player[]): Generator<undefined, Player, QgAction> {
     // Quinn's Game
     const infronts_num = 3;
     const state: QgState = {
@@ -317,13 +357,14 @@ function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
         trash: new Pile(),
         players: new PlayerCircle(players_in),
         hands: new Map(players_in.map(p => [p, new Hand(p)])),
-        infronts: new Map(players_in.map(p => [p, Array.from({length: infronts_num}, () => new Pile())])),
+        infronts: new Map(players_in.map(p => [p, new Grid(3, 1)])),
         player: null,
     };
     const dealer = state.players.players[0] ?? invalid("need a dealer");
 
+    // TODO: fix deal order (deal 9 to each player, then each player sets 3 face down and looks at the rest)
     deal(6, state.deck, state.players.players.map(pl => state.hands.get(pl)!), Facing.player);
-    deal(1, state.deck, state.players.players.flatMap(pl => state.infronts.get(pl)!), Facing.down); // these ones are face down.
+    deal(1, state.deck, state.players.players.flatMap(pl => state.infronts.get(pl)!.items), Facing.down); // these ones are face down.
 
     // choose top cards
     const action = yield;
@@ -335,13 +376,13 @@ function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
             if(i >= infronts_num) invalid("bad number of infronts");
             for(const infront of infronts) if(!state.hands.get(itm.player)!.includes(infront)) invalid("not your card to place");
             if(!infronts.every(card => card.value === infronts[0]?.value)) invalid("all cards added to the pile must be the same");
-            state.infronts.get(itm.player)![i]!.addAll(infronts, Facing.up);
+            state.infronts.get(itm.player)!.items[i]!.addAll(infronts, Facing.up);
         })
     }
     // validate that all players have chosen topcards
     for(const player of state.players.players) {
         const infronts = state.infronts.get(player)!;
-        for(const infront_pile of infronts) {
+        for(const infront_pile of infronts.items) {
             if(infront_pile.count() <= 1) invalid("must add a card to all of your piles");
         }
     }
@@ -357,11 +398,11 @@ function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
             const hand = state.hands.get(action.player)!;
             const infronts = state.infronts.get(action.player)!;
             if(hand.cards.length === 0) {
-                if(infronts.every(infront => infront.cards.every(card => card.facing === Facing.down))) {
+                if(infronts.items.every(infront => infront.cards.every(card => card.facing === Facing.down))) {
                     // out of face-ups; playing face-downs
                     if(action.cards.length !== 1) invalid("there is only one face-down card");
                     const card = action.cards[0]!;
-                    const target = infronts.find(infront => infront.includes(action.cards[0]!)) ?? invalid("that's not one of your face down cards");
+                    const target = infronts.items.find(infront => infront.includes(action.cards[0]!)) ?? invalid("that's not one of your face down cards");
                     if(target.cards.length !== 1) invalid("unreachable");
                     target.take(card);
                     if((target.cards.length as number) !== 0) invalid("unreachable");
@@ -377,7 +418,7 @@ function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
                     }
                 }else{
                     // out of cards; playing face-ups
-                    const target = infronts.find(infront => infront.includes(action.cards[0]!)) ?? invalid("that's not one of your face up cards");
+                    const target = infronts.items.find(infront => infront.includes(action.cards[0]!)) ?? invalid("that's not one of your face up cards");
                     if(action.cards.some(card => card.facing !== Facing.up)) invalid("you can only play your face-up cards now");
                     if(action.cards.length !== target.cards.filter(c => c.facing === Facing.up).length) invalid("you have to play the whole pile at once");
 
@@ -386,7 +427,7 @@ function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
             }else{
                 qgPlay(state, state.hands.get(state.player!)!.takeAllOf(action.cards));
             }
-            if(hand.cards.length === 0 && infronts.every(infront_pile => infront_pile.cards.length === 0)) {
+            if(hand.cards.length === 0 && infronts.items.every(infront_pile => infront_pile.cards.length === 0)) {
                 // winner
                 break;
             }
@@ -405,4 +446,130 @@ function* qgGame(players_in: Player[]): Generator<undefined, void, QgAction> {
             state.player = state.players.leftOf(state.player!);
         }
     }
+
+    // winner!
+    return state.player;
+}
+
+type GState = {
+    deck: Pile,
+    discard: Pile,
+    players: PlayerCircle,
+    grids: Map<Player, Grid>,
+};
+type GAction = {
+    kind: "draw",
+    player: Player,
+} | {
+    kind: "play",
+    player: Player,
+    take_card: Card,
+    replace_card: Card,
+} | {
+    kind: "discard_drawn",
+    player: Player,
+};
+function gDraw(state: GState): Card {
+    let top = state.deck.takeTop();
+    if(top != null) return top;
+
+    const top_of_discard = state.discard.takeTop() ?? invalid("unreachable");
+    state.deck.addAll(state.discard.takeAll(), Facing.down);
+    state.discard.add(top_of_discard!, top_of_discard.facing);
+    state.deck.shuffle();
+
+    top = state.deck.takeTop();
+    return top ?? invalid("not enough cards in deck");
+}
+function gCost(value: Value): number {
+    switch(value) {
+        case Value.ace: return 1;
+        case Value.two: return 2;
+        case Value.three: return 3;
+        case Value.four: return 4;
+        case Value.five: return 5;
+        case Value.six: return 6;
+        case Value.seven: return 7;
+        case Value.eight: return 8;
+        case Value.nine: return 9;
+        case Value.ten: return 10;
+        case Value.jack: return 0;
+        case Value.queen: return 13;
+        case Value.king: return 0;
+        default: invalid("unreachable");
+    }
+}
+function* gGame(players_in: Player[]): Generator<undefined, Map<Player, Number>, GAction> {
+    // Golf
+    const infronts_num = 3;
+    const state: GState = {
+        deck: regularDeck(),
+        discard: new Pile(),
+        players: new PlayerCircle(players_in),
+        grids: new Map(players_in.map(p => [p, new Grid(4, 2)])),
+    };
+    const dealer = state.players.players[0] ?? invalid("need a dealer");
+
+    // TODO: fix deal order (deal 8 to each player, then each player assembles their grid)
+    deal(1, state.deck, state.players.players.flatMap(pl => state.grids.get(pl)!.items), Facing.down);
+
+    // reveal the top card
+    state.discard.add(state.deck.takeTop() ?? invalid("not enough cards in deck"), Facing.up);
+
+    let player = state.players.leftOf(dealer);
+    while(true) {
+        // check end
+        const grid = state.grids.get(player)!;
+        if(grid.items.every(itm => itm.cards[0]!.facing === Facing.up)) break;
+
+        let action = yield;
+        let take_target: Card;
+        if(action.kind === "draw") {
+            if(action.player !== player) invalid("not your turn");
+            take_target = gDraw(state);
+
+            action = yield;
+            if(action.kind === "discard_drawn") {
+                if(action.player !== player) invalid("not your turn");
+                state.discard.add(take_target, Facing.up);
+
+                player = state.players.leftOf(player);
+                continue;
+            }
+        }else{
+            take_target = state.discard.takeTop() ?? invalid("unreachable");
+        }
+        if(action.kind !== "play") invalid("can't do that");
+        if(action.player !== player) invalid("not your turn");
+        
+        if(action.take_card !== take_target) invalid("you can't take that card");
+        let replace_target = grid.findXY(pile => pile.includes(action.replace_card)) ?? invalid("not your grid");
+        const replace_pile = grid.get(replace_target) ?? invalid("unreachable");
+        state.discard.add(replace_pile.takeTop() ?? invalid("unreachable"), Facing.up);
+        replace_pile.add(action.take_card, Facing.up);
+
+        player = state.players.leftOf(player);
+    }
+
+    // calculate score
+    return new Map<Player, number>(state.players.players.map(pl => {
+        const grid = state.grids.get(player)!;
+        let prev_col: null | Card[] = null;
+        let total = 0;
+        for(let x = 0; x < grid.width; x++) {
+            const col = Array.from({length: grid.height}, (_, y) => grid.get([x, y])!.cards[0]!);
+            if(col.every(card => card.value === col[0]!.value)) {
+                // zero. check for dream
+                if(prev_col != null && prev_col.every(card => card.value === col[0]!.value)) {
+                    // dream!
+                    total -= 20;
+                    prev_col = null; // no double-dipping a dream if you're playing with multiple decks of cards
+                }
+            }else{
+                total += col.reduce((t, a) => t + gCost(a.value), 0);
+            }
+            prev_col = col;
+        }
+        return [pl, total];
+    }));
 }

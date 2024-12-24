@@ -2,7 +2,7 @@ Formalizations of card games I know
 
 - [x] crazy 8s
 - [x] quinn's game
-- [ ] golf
+- [x] golf
 - [ ] rummy
 - [ ] pinochle
 - [ ] durak
