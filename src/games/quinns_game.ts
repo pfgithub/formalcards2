@@ -81,6 +81,8 @@ function* qgGame(players_in: PlayerCircle): Generator<undefined, Player, QgActio
     };
     const dealer = state.players.players[0] ?? invalid("need a dealer");
 
+    state.deck.shuffle();
+
     // TODO: fix deal order (deal 9 to each player, then each player sets 3 face down and looks at the rest)
     deal(6, state.deck, state.players.players.map(pl => state.hands.get(pl)!), Facing.player);
     deal(1, state.deck, state.players.players.flatMap(pl => state.infronts.get(pl)!.items), Facing.down); // these ones are face down.

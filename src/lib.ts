@@ -79,6 +79,9 @@ export class Pile {
     includes(card: Card): boolean {
         return this.cards.includes(card);
     }
+    includesAllOf(card: Set<Card>): boolean {
+        return [...card].every(card => this.includes(card));
+    }
     once(ev: "add", cb: () => void) {
         this.onceAdd.push(cb);
     }
@@ -126,10 +129,27 @@ export class PlayerCircle {
     constructor(public players: Player[]) {}
 
     leftOf(player: Player): Player {
-        return this.players[((this.players.indexOf(player) ?? invalid("not in circle")) + 1) % this.players.length]!;
+        const idx = this.players.indexOf(player);
+        if(idx === -1) invalid("not in circle");
+        return this.players[((idx) + 1) % this.players.length]!;
+    }
+    leftOfExcluding(player: Player, excluding: Set<Player>): Player {
+        if(this.players.every(player => excluding.has(player))) invalid("all players excluded");
+        let res = player;
+        do{
+            res = this.leftOf(res);
+        }while(!excluding.has(player));
+        return res;
     }
     includes(player: Player): boolean {
         return this.players.includes(player);
+    }
+    oppositeOf(player: Player): Player {
+        const idx = this.players.indexOf(player);
+        if(idx === -1) invalid("not in circle");
+        if(this.players.length % 2 !== 0) invalid("must have even # players");
+        const half = Math.floor(this.players.length / 2);
+        return this.players[idx < half ? idx + half : idx - half];
     }
 }
 
@@ -138,6 +158,17 @@ export function regularDeck(): Pile {
     for(const suit of [Suit.hearts, Suit.spades, Suit.diamonds, Suit.clubs]) {
         for(const value of [Value.ace, Value.two, Value.three, Value.four, Value.five, Value.six, Value.seven, Value.eight, Value.nine, Value.ten, Value.jack, Value.queen, Value.king]) {
             res.add(new Card(value, suit), Facing.down);
+        }
+    }
+    return res;
+}
+export function pinochleDeck(): Pile {
+    const res = new Pile();
+    for(let i = 0; i < 2; i++) {
+        for(const suit of [Suit.hearts, Suit.spades, Suit.diamonds, Suit.clubs]) {
+            for(const value of [Value.nine, Value.jack, Value.queen, Value.king, Value.ten, Value.ace]) {
+                res.add(new Card(value, suit), Facing.down);
+            }
         }
     }
     return res;

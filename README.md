@@ -10,6 +10,7 @@ Formalizations of card games I know
 - [ ] russian lion game
 - [ ] egyptian war
 - [ ] go fish
+- [ ] cribbage
 - [ ] mao
 
 TODO:

@@ -59,6 +59,7 @@ function* gGame(players_in: Player[]): Generator<undefined, Map<Player, Number>,
     };
     const dealer = state.players.players[0] ?? invalid("need a dealer");
 
+    state.deck.shuffle();
     // TODO: fix deal order (deal 8 to each player, then each player assembles their grid)
     deal(1, state.deck, state.players.players.flatMap(pl => state.grids.get(pl)!.items), Facing.down);
 
