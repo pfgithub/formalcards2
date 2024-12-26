@@ -203,5 +203,6 @@ function* game(players_in: PlayerCircle): Generator<undefined, void, Action> {
 
     // count score
     // ace, ten, king = +1, else = +0
+    // 0 points = don't keep your meld (even if you took a trick)
     if((true)) invalid("TODO count score");
 }
