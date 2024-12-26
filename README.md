@@ -12,6 +12,7 @@ Formalizations of card games I know
 - [ ] go fish
 - [ ] cribbage
 - [ ] mao
+- [ ] 52 card pickup
 
 TODO:
 
